@@ -7,102 +7,17 @@ import cv2
 import numpy as np
 import os
 
-def process_dxf_image(image, threshold_value=127):
-    """
-    Procesa una imagen DXF y extrae los contornos externos e internos.
-    
-    Args:
-        image: Imagen en formato OpenCV (numpy array)
-        threshold_value: Valor de umbral para binarización (0-255)
-        
-    Returns:
-        Tupla con (imagen original, imagen en escala de grises, contornos, jerarquía)
-    """
-    # Verificar que la imagen no sea None
-    if image is None:
-        print("ERROR: La imagen es None")
-        return None, None, [], None
-    
-    # Verificar forma y tipo de la imagen
-    print(f"Imagen de entrada: forma={image.shape}, tipo={image.dtype}")
-    
-    # Convertir a escala de grises si la imagen es a color
-    if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image.copy()
-    
-    # Verificar que la imagen no esté vacía
-    if np.all(gray == 0) or np.all(gray == 255):
-        print("ADVERTENCIA: La imagen está completamente negra o blanca")
-    
-    # Imprimir estadísticas de la imagen
-    print(f"Estadísticas de imagen: min={np.min(gray)}, max={np.max(gray)}, mean={np.mean(gray):.2f}")
-    
-    # Para la detección de contornos, necesitamos una imagen binaria
-    # Pero para la visualización, usaremos la imagen en escala de grises sin procesar
-    
-    # Aplicar un pequeño desenfoque gaussiano para reducir ruido en la detección
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    # Probar diferentes métodos de umbralización para encontrar el mejor
-    
-    # 1. Umbral binario invertido (objetos negros sobre fondo blanco)
-    _, thresh_inv = cv2.threshold(blurred, threshold_value, 255, cv2.THRESH_BINARY_INV)
-    
-    # 2. Umbral adaptativo (mejor para imágenes con iluminación variable)
-    thresh_adapt = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                        cv2.THRESH_BINARY_INV, 11, 2)
-    
-    # 3. Umbral Otsu (encuentra automáticamente el mejor valor de umbral)
-    _, thresh_otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Probar cada umbral y usar el que encuentre más contornos
-    contours_inv, hierarchy_inv = cv2.findContours(thresh_inv.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    contours_adapt, hierarchy_adapt = cv2.findContours(thresh_adapt.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    contours_otsu, hierarchy_otsu = cv2.findContours(thresh_otsu.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Seleccionar el método que encuentre más contornos
-    contours_counts = [
-        (len(contours_inv) if contours_inv is not None else 0, thresh_inv, contours_inv, hierarchy_inv, "Umbral invertido"),
-        (len(contours_adapt) if contours_adapt is not None else 0, thresh_adapt, contours_adapt, hierarchy_adapt, "Umbral adaptativo"),
-        (len(contours_otsu) if contours_otsu is not None else 0, thresh_otsu, contours_otsu, hierarchy_otsu, "Umbral Otsu")
-    ]
-    
-    # Ordenar por cantidad de contornos (de mayor a menor)
-    contours_counts.sort(reverse=True, key=lambda x: x[0])
-    
-    # Usar el método con más contornos
-    count, thresh, contours, hierarchy, method_name = contours_counts[0]
-    
-    print(f"Método seleccionado: {method_name} con {count} contornos")
-    
-    # Si no se encontraron contornos con ningún método
-    if count == 0:
-        print("No se encontraron contornos con ningún método de umbralización")
-        return image, gray, [], None
-    
-    # Contar contornos externos e internos
-    if hierarchy is not None:
-        contornos_externos = sum(1 for h in hierarchy[0] if h[3] == -1)
-        contornos_internos = len(contours) - contornos_externos
-        print(f"Contornos externos: {contornos_externos}, Contornos internos: {contornos_internos}")
-    
-    # Devolver la imagen original, la imagen en escala de grises (sin umbralización),
-    # los contornos y la jerarquía
-    return image, gray, contours, hierarchy
 
-def dxf_to_morphology(dxf_image, threshold_value=200, show_all=False):
+def dxf_to_morphology(dxf_image, threshold_value=200):
     """
-    Función principal que procesa una imagen DXF y extrae los contornos externos e internos.
+    Función principal que procesa una imagen DXF y realiza análisis morfológico completo.
     
     Args:
         dxf_image: Imagen DXF en formato OpenCV (numpy array)
         threshold_value: Valor de umbral para binarización (0-255)
-        show_all: Parámetro obsoleto, mantenido por compatibilidad
         
     Returns:
-        Diccionario con las imágenes generadas y métricas calculadas
+        Diccionario con imágenes generadas, métricas y datos de contornos
     """
     try:
         # Verificar que la imagen de entrada sea válida
@@ -111,38 +26,75 @@ def dxf_to_morphology(dxf_image, threshold_value=200, show_all=False):
         
         print(f"Procesando imagen de tamaño: {dxf_image.shape}")
         
-        # Procesar la imagen para obtener contornos
-        original_image, thresh, contours, hierarchy = process_dxf_image(dxf_image, threshold_value)
+        # --- Inicio del código de process_dxf_image integrado ---
+        # Verificar forma y tipo de la imagen
+        print(f"Imagen de entrada: forma={dxf_image.shape}, tipo={dxf_image.dtype}")
         
-        # Crear una copia de la imagen binaria para visualización
-        # Convertir a BGR para poder mostrar colores
-        if thresh is not None:
-            thresh_display = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+        # Convertir a escala de grises si es necesario
+        if len(dxf_image.shape) == 3:
+            gray = cv2.cvtColor(dxf_image, cv2.COLOR_BGR2GRAY)
         else:
-            print("La imagen binaria es None")
-            h, w = dxf_image.shape[:2]
-            thresh = np.ones((h, w), dtype=np.uint8) * 255
-            thresh_display = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+            gray = dxf_image.copy()
         
-        # Inicializar diccionario de métricas
-        metrics = {
-            'contornos_externos': {
-                'cantidad': 0,
-                'perimetro_total': 0,
-                'area_total': 0,
-                'detalles': []
-            },
-            'contornos_internos': {
-                'cantidad': 0,
-                'perimetro_total': 0,
-                'area_total': 0,
-                'detalles': []
-            }
-        }
+        # Verificar imagen vacía
+        if np.all(gray == 0) or np.all(gray == 255):
+            print("ADVERTENCIA: La imagen está completamente negra o blanca")
         
-        # Obtener dimensiones de la imagen
+        # Estadísticas de imagen
+        print(f"Estadísticas de imagen: min={np.min(gray)}, max={np.max(gray)}, mean={np.mean(gray):.2f}")
+        
+        # Aplicar desenfoque gaussiano
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        
+        # Probar diferentes métodos de umbralización
+        _, thresh_inv = cv2.threshold(blurred, threshold_value, 255, cv2.THRESH_BINARY_INV)
+        thresh_adapt = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                            cv2.THRESH_BINARY_INV, 11, 2)
+        _, thresh_otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        
+        # Buscar contornos con cada método
+        contours_inv, hierarchy_inv = cv2.findContours(thresh_inv.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        contours_adapt, hierarchy_adapt = cv2.findContours(thresh_adapt.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        contours_otsu, hierarchy_otsu = cv2.findContours(thresh_otsu.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Seleccionar método con más contornos
+        contours_counts = [
+            (len(contours_inv) if contours_inv is not None else 0, thresh_inv, contours_inv, hierarchy_inv, "Umbral invertido"),
+            (len(contours_adapt) if contours_adapt is not None else 0, thresh_adapt, contours_adapt, hierarchy_adapt, "Umbral adaptativo"),
+            (len(contours_otsu) if contours_otsu is not None else 0, thresh_otsu, contours_otsu, hierarchy_otsu, "Umbral Otsu")
+        ]
+        contours_counts.sort(reverse=True, key=lambda x: x[0])
+        count, thresh, contours, hierarchy, method_name = contours_counts[0]
+        print(f"Método seleccionado: {method_name} con {count} contornos")
+        
+        # Manejar caso sin contornos
+        if count == 0:
+            print("No se encontraron contornos con ningún método de umbralización")
+            contours = []
+            hierarchy = None
+        
+        # Contar contornos externos e internos
+        contornos_externos = 0
+        contornos_internos = 0
+        if hierarchy is not None:
+            contornos_externos = sum(1 for h in hierarchy[0] if h[3] == -1)
+            contornos_internos = len(contours) - contornos_externos
+            print(f"Contornos externos: {contornos_externos}, Contornos internos: {contornos_internos}")
+        
+        # --- Fin del código de process_dxf_image integrado ---
+        
+        # Crear imagen binaria para visualización
         h, w = dxf_image.shape[:2]
-        
+        if thresh is None:
+            thresh = np.ones((h, w), dtype=np.uint8) * 255
+        thresh_display = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+
+        # Inicializar métricas
+        metrics = {
+            'contornos_externos': {'cantidad': contornos_externos, 'perimetro_total': 0, 'area_total': 0, 'detalles': []},
+            'contornos_internos': {'cantidad': contornos_internos, 'perimetro_total': 0, 'area_total': 0, 'detalles': []}
+        }
+
         # Si no hay contornos, devolver imágenes vacías con mensaje
         if not contours or len(contours) == 0:
             print("No se encontraron contornos en la imagen")
@@ -164,19 +116,15 @@ def dxf_to_morphology(dxf_image, threshold_value=200, show_all=False):
                 'metrics': metrics
             }
         
+        
+        
         # Crear imágenes para contornos externos e internos
-        # Usar imágenes a color para mejor visualización
         external_contours_img = np.ones((h, w, 3), dtype=np.uint8) * 255
         internal_contours_img = np.ones((h, w, 3), dtype=np.uint8) * 255
-        
-        # Imagen combinada para mostrar todos los contornos
         all_contours_img = np.ones((h, w, 3), dtype=np.uint8) * 255
+        filled_contours_img = np.ones((h, w), dtype=np.uint8) * 255
         
-        # Imagen para mostrar contornos rellenos (como en Example.py)
-        filled_contours_img = np.ones((h, w), dtype=np.uint8) * 255  # Fondo blanco
-        
-        # Dibujar contornos externos en rojo (h[3] == -1 significa que no tiene padre)
-        contornos_externos = 0
+        # Dibujar contornos externos en rojo
         for i, h in enumerate(hierarchy[0]):
             if h[3] == -1:  # Es un contorno externo
                 # Dibujar contorno con línea muy gruesa para asegurar visibilidad
@@ -228,8 +176,7 @@ def dxf_to_morphology(dxf_image, threshold_value=200, show_all=False):
                 
                 contornos_externos += 1
         
-        # Dibujar contornos internos en verde (h[3] != -1 significa que tiene padre)
-        contornos_internos = 0
+        # Dibujar contornos internos en verde
         for i, h in enumerate(hierarchy[0]):
             if h[3] != -1:  # Es un contorno interno
                 # Dibujar contorno con línea muy gruesa para asegurar visibilidad
@@ -277,7 +224,7 @@ def dxf_to_morphology(dxf_image, threshold_value=200, show_all=False):
                 
                 contornos_internos += 1
         
-        print(f"Dibujados {contornos_externos} contornos externos y {contornos_internos} contornos internos")
+        print(f"Dibujados {metrics['contornos_externos']['cantidad']} contornos externos y {metrics['contornos_internos']['cantidad']} contornos internos")
         
         # Añadir texto informativo a las imágenes
         cv2.putText(external_contours_img, "CONTORNOS EXTERNOS", (10, 30),

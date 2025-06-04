@@ -640,35 +640,14 @@ class DXFViewerApp(QMainWindow):
             print(f"Imagen convertida: forma={cv_image.shape}, tipo={cv_image.dtype}")
             print(f"Valores: min={np.min(cv_image)}, max={np.max(cv_image)}, media={np.mean(cv_image):.2f}")
             
-            # Probar diferentes valores de umbral para encontrar el mejor
-            thresholds = [50, 100, 150, 200]
-            best_result = None
-            best_contours_count = -1
+            # Realizar análisis morfológico con umbral automático
+            best_result = dxf_morphology.dxf_to_morphology(cv_image)
             
-            for threshold in thresholds:
-                # Realizar análisis morfológico con este umbral
-                result = dxf_morphology.dxf_to_morphology(
-                    cv_image,
-                    threshold_value=threshold
-                )
-                
-                # Contar contornos totales
-                metrics = result.get('metrics', {})
-                externos = metrics.get('contornos_externos', {}).get('cantidad', 0)
-                internos = metrics.get('contornos_internos', {}).get('cantidad', 0)
-                total_contours = externos + internos
-                
-                print(f"Umbral {threshold}: {total_contours} contornos ({externos} externos, {internos} internos)")
-                
-                # Actualizar el mejor resultado si encontramos más contornos
-                if total_contours > best_contours_count:
-                    best_contours_count = total_contours
-                    best_result = result
-            
-            # Si no se encontraron contornos con ningún umbral, usar el último resultado
-            if best_contours_count == 0:
-                print("No se encontraron contornos con ningún umbral, usando el último resultado")
-                best_result = result
+            # Obtener métricas para mostrar en la barra de estado
+            metrics = best_result.get('metrics', {})
+            externos = metrics.get('contornos_externos', {}).get('cantidad', 0)
+            internos = metrics.get('contornos_internos', {}).get('cantidad', 0)
+            best_contours_count = externos + internos
             
             # Verificar que se obtuvieron resultados
             if not best_result or 'images' not in best_result:
